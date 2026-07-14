@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>FileTransfer — Requests</title>
+<link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+<header>
+  <span class="dot"></span>
+  <div>
+    <h1>FileTransfer · Master</h1>
+    <div class="sub">Transfer request audit log</div>
+  </div>
+  <div style="margin-left:auto;" class="sub"><span id="reqCount">0</span> match</div>
+</header>
+<nav id="nav"></nav>
+
+<div class="wrap wide">
+  <div class="card">
+    <h2>Transfer Requests</h2>
+    <div class="body">
+      <div class="row">
+        <div><label>Outcome</label>
+          <select id="fOutcome" onchange="pageIdx=0;render()">
+            <option value="">All</option>
+            <option value="accepted">accepted</option>
+            <option value="rejected">rejected</option>
+          </select>
+        </div>
+        <div><label>Flow</label><select id="fFlow" onchange="pageIdx=0;render()"></select></div>
+        <div><label>Sender app</label><select id="fSender" onchange="pageIdx=0;render()"></select></div>
+        <div><label>Receiver app</label><select id="fReceiver" onchange="pageIdx=0;render()"></select></div>
+        <div style="flex:2;"><label>Search (source / target / CN / error)</label><input id="fSearch" oninput="pageIdx=0;render()" placeholder="filter text…"></div>
+        <div style="flex:0;"><label>&nbsp;</label><button class="ghost" onclick="clearFilters()">Clear</button></div>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr>
+          <th class="sortable" onclick="sortBy('created_at')">Time <span id="arTime"></span></th>
+          <th>Outcome</th><th>Flow</th><th>Sender → Receiver</th><th>Source → Target</th>
+          <th>Client CN</th><th>Status</th><th>Result</th>
+        </tr></thead>
+        <tbody id="reqBody"><tr><td colspan="8" class="muted" style="padding:18px;">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="body" style="display:flex;align-items:center;gap:12px;">
+      <button class="ghost" id="prev" onclick="page(-1)">‹ Prev</button>
+      <span class="muted" id="pageInfo" style="font-size:.8rem;"></span>
+      <button class="ghost" id="next" onclick="page(1)">Next ›</button>
+      <span style="margin-left:auto;" class="muted">Rows per page:
+        <select id="pageSize" onchange="pageIdx=0;render()" style="width:auto;display:inline-block;">
+          <option>10</option><option selected>25</option><option>50</option><option>100</option>
+        </select>
+      </span>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+renderNav('requests');
+let REQS=[], pageIdx=0, sort={key:'created_at', dir:-1};
+
+function clearFilters(){ ['fOutcome','fFlow','fSender','fReceiver','fSearch'].forEach(id=>document.getElementById(id).value=''); pageIdx=0; render(); }
+function sortBy(k){ if(sort.key===k) sort.dir=-sort.dir; else { sort.key=k; sort.dir=-1; } render(); }
+function page(d){ pageIdx+=d; render(); }
+
+function result(q){
+  if(q.transfer_id) return `<a class="mono" href="/transfer.html?id=${encodeURIComponent(q.transfer_id)}" title="${esc(q.transfer_id)}">${esc(q.transfer_id.slice(0,8))}…</a>`;
+  return q.error ? `<span class="muted" style="font-size:.72rem;">${esc(q.error)}</span>` : '—';
+}
+function row(q){
+  return `<tr>
+    <td class="muted">${when(q.created_at)}</td>
+    <td><span class="pill o-${esc(q.outcome)}">${esc(q.outcome)}</span></td>
+    <td class="mono">${esc(q.flow_id||'—')}</td>
+    <td>${esc(q.sender_app||'—')} <span class="muted">→</span> ${esc(q.target_app||'—')}</td>
+    <td><div>${esc(q.source||'—')}</div><div class="muted">→ ${esc(q.target||'(same name)')}</div></td>
+    <td class="mono muted">${esc(q.client_cn||'—')}</td>
+    <td>${q.status_code||'—'}</td>
+    <td>${result(q)}</td></tr>`;
+}
+
+function fillOptions(){
+  const set=(id,vals,label)=>{ const s=document.getElementById(id), cur=s.value;
+    s.innerHTML=`<option value="">${label}</option>`+[...new Set(vals.filter(Boolean))].sort().map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    s.value=cur; };
+  set('fFlow', REQS.map(q=>q.flow_id), 'All flows');
+  set('fSender', REQS.map(q=>q.sender_app), 'All senders');
+  set('fReceiver', REQS.map(q=>q.target_app), 'All receivers');
+}
+
+function render(){
+  const oc=document.getElementById('fOutcome').value, fl=document.getElementById('fFlow').value;
+  const sn=document.getElementById('fSender').value, rc=document.getElementById('fReceiver').value;
+  const qy=document.getElementById('fSearch').value.trim().toLowerCase();
+  let rows=REQS.filter(q=>{
+    if(oc && q.outcome!==oc) return false;
+    if(fl && (q.flow_id||'')!==fl) return false;
+    if(sn && (q.sender_app||'')!==sn) return false;
+    if(rc && (q.target_app||'')!==rc) return false;
+    if(qy){ const hay=((q.source||'')+' '+(q.target||'')+' '+(q.client_cn||'')+' '+(q.error||'')+' '+(q.transfer_id||'')).toLowerCase(); if(!hay.includes(qy)) return false; }
+    return true;
+  });
+  rows.sort((a,b)=>(new Date(a.created_at||0)-new Date(b.created_at||0))*sort.dir);
+  document.getElementById('arTime').textContent = sort.key==='created_at' ? (sort.dir<0?'▼':'▲') : '';
+
+  const size=parseInt(document.getElementById('pageSize').value)||25;
+  const total=rows.length, pages=Math.max(1,Math.ceil(total/size));
+  if(pageIdx>=pages) pageIdx=pages-1; if(pageIdx<0) pageIdx=0;
+  const start=pageIdx*size, slice=rows.slice(start, start+size);
+
+  document.getElementById('reqCount').textContent=total;
+  document.getElementById('reqBody').innerHTML=slice.length? slice.map(row).join('')
+    : `<tr><td colspan="8" class="muted" style="padding:18px;">No requests match the filters.</td></tr>`;
+  document.getElementById('pageInfo').textContent = total ? `Showing ${start+1}–${start+slice.length} of ${total} · page ${pageIdx+1}/${pages}` : '0 results';
+  document.getElementById('prev').disabled = pageIdx<=0;
+  document.getElementById('next').disabled = pageIdx>=pages-1;
+}
+
+async function load(){
+  REQS=await api('GET','/requests')||[];
+  fillOptions();
+  render();
+}
+load(); setInterval(load, 4000);
+</script>
+</body>
+</html>

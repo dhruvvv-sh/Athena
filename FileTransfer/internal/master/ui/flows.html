@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>FileTransfer — Flows</title>
+<link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+<header>
+  <span class="dot"></span>
+  <div>
+    <h1>FileTransfer · Master</h1>
+    <div class="sub">Configured transfer flows</div>
+  </div>
+  <div style="margin-left:auto;" class="sub"><span id="flowCount">0</span> flow(s)</div>
+</header>
+<nav id="nav"></nav>
+
+<div class="wrap">
+  <div class="grid">
+    <div class="card">
+      <h2>Flows</h2>
+      <table>
+        <thead><tr><th>Flow identifier</th><th>Sender → Receiver</th></tr></thead>
+        <tbody id="flowBody"><tr><td colspan="2" class="muted" style="padding:18px;">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>Flow Details</h2>
+      <div class="body" id="detail"><div class="muted">Select a flow to see its details.</div></div>
+    </div>
+  </div>
+  <p class="muted" style="font-size:.78rem;">
+    One file per flow under <span class="mono">&lt;FT_HOME&gt;/flows/</span>, named by the flow identifier
+    (<span class="mono">&lt;Sender&gt;_&lt;Receiver&gt;_&lt;Functionality&gt;_&lt;Country&gt;</span>). Each flow defines a sender and a
+    receiver by application name + sandbox <span class="mono">file_path</span> + cert CN. Application endpoints are mapped
+    in <span class="mono">config/applications.yml</span>.
+  </p>
+</div>
+
+<script src="/app.js"></script>
+<script>
+renderNav('flows');
+let FLOWS=[], selected=null, APPS={};
+
+function permPills(perms){
+  const all=['read','write','list','delete'];
+  return all.map(p=>{ const on=(perms||[]).includes(p);
+    return `<span class="pill" style="margin-right:4px;background:${on?'#11331f':'#241b26'};color:${on?'#4ade80':'#6b5563'};">${on?'✓':'✕'} ${p}</span>`; }).join('');
+}
+function endpointBlock(role, ep){
+  return `<div class="kv">
+    <div class="k">${role}</div><div><b>${esc(ep.application)}</b> <span class="muted mono">${esc(APPS[ep.application]||'no endpoint')}</span></div>
+    <div class="k">Cert CN</div><div class="mono">${esc(ep.cn)}</div>
+    <div class="k">Sandbox</div><div class="mono muted">${esc(ep.path)}</div>
+    <div class="k">Permissions</div><div>${permPills(ep.permissions)}</div>
+  </div>`;
+}
+
+function showDetail(f){
+  selected=f.flow_identifier;
+  document.querySelectorAll('#flowBody tr').forEach(tr=>tr.classList.toggle('selected', tr.dataset.id===f.flow_identifier));
+  document.getElementById('detail').innerHTML=`
+    <div class="kv" style="margin-bottom:12px;"><div class="k">Flow identifier</div><div class="mono"><b>${esc(f.flow_identifier)}</b></div></div>
+    <div style="margin-bottom:10px;"><span class="pill d-sender">sender</span></div>${endpointBlock('Application', f.sender)}
+    <div style="margin:14px 0 10px;"><span class="pill d-receiver">receiver</span></div>${endpointBlock('Application', f.receiver)}
+    <div style="margin-top:14px;">
+      <label>Sender sandbox contents</label>
+      <div class="fb" id="fbSender"></div>
+    </div>
+    <div style="margin-top:12px;">
+      <label>Receiver sandbox contents</label>
+      <div class="fb" id="fbReceiver"></div>
+    </div>`;
+  mountBrowser(document.getElementById('fbSender'), f.flow_identifier, 'sender');
+  mountBrowser(document.getElementById('fbReceiver'), f.flow_identifier, 'receiver');
+}
+
+function renderRows(){
+  document.getElementById('flowBody').innerHTML=FLOWS.length? FLOWS.map(f=>
+    `<tr class="clickable ${f.flow_identifier===selected?'selected':''}" data-id="${esc(f.flow_identifier)}">
+      <td class="mono">${esc(f.flow_identifier)}</td>
+      <td>${esc(f.sender.application)} <span class="muted">→</span> ${esc(f.receiver.application)}</td></tr>`).join('')
+    : `<tr><td colspan="2" class="muted" style="padding:18px;">No flows configured.</td></tr>`;
+  document.querySelectorAll('#flowBody tr.clickable').forEach(tr=>
+    tr.onclick=()=>showDetail(FLOWS.find(f=>f.flow_identifier===tr.dataset.id)));
+}
+
+async function load(){
+  [FLOWS, APPS]=await Promise.all([api('GET','/flows'), api('GET','/applications')]);
+  FLOWS=FLOWS||[]; APPS=APPS||{};
+  document.getElementById('flowCount').textContent=FLOWS.length;
+  renderRows();
+}
+load();
+</script>
+</body>
+</html>

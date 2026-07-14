@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>FileTransfer — Transfers</title>
+<link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+<header>
+  <span class="dot"></span>
+  <div>
+    <h1>FileTransfer · Master</h1>
+    <div class="sub">Distributed transfer tracking</div>
+  </div>
+  <div style="margin-left:auto;" class="sub"><span id="xferCount">0</span> match</div>
+</header>
+<nav id="nav"></nav>
+
+<div class="wrap wide">
+  <div class="card">
+    <h2>File Transfers</h2>
+    <div class="body">
+      <div class="row">
+        <div><label>Flow</label><select id="fFlow" onchange="render()"></select></div>
+        <div><label>Worker node</label><select id="fNode" onchange="render()"></select></div>
+        <div><label>Status</label>
+          <select id="fStatus" onchange="render()">
+            <option value="">All</option>
+            <option value="pending">pending</option>
+            <option value="assigned">assigned</option>
+            <option value="in_progress">in_progress</option>
+            <option value="completed">completed</option>
+            <option value="failed">failed</option>
+            <option value="canceled">canceled</option>
+          </select>
+        </div>
+        <div style="flex:2;"><label>Search (id / source / target)</label><input id="fSearch" oninput="render()" placeholder="filter text…"></div>
+        <div style="flex:0;"><label>&nbsp;</label><button class="ghost" onclick="clearFilters()">Clear</button></div>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr>
+          <th>ID</th><th>Flow</th><th>Worker node</th><th>Source → Target</th><th>Size</th><th>Status</th><th>Latency</th>
+          <th class="sortable" onclick="sortBy('created_at')">Created <span id="arCreated"></span></th>
+          <th class="sortable" onclick="sortBy('updated_at')">Updated <span id="arUpdated"></span></th>
+        </tr></thead>
+        <tbody id="xferBody"><tr><td colspan="8" class="muted" style="padding:18px;">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="body" style="display:flex;align-items:center;gap:12px;">
+      <button class="ghost" id="prev" onclick="page(-1)">‹ Prev</button>
+      <span class="muted" id="pageInfo" style="font-size:.8rem;"></span>
+      <button class="ghost" id="next" onclick="page(1)">Next ›</button>
+      <span style="margin-left:auto;" class="muted" style="font-size:.8rem;">Rows per page:
+        <select id="pageSize" onchange="pageIdx=0;render()" style="width:auto;display:inline-block;">
+          <option>10</option><option selected>25</option><option>50</option><option>100</option>
+        </select>
+      </span>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+renderNav('transfers');
+let XFERS=[], pageIdx=0, sort={key:'created_at', dir:-1};
+
+function clearFilters(){ document.getElementById('fFlow').value=''; document.getElementById('fNode').value='';
+  document.getElementById('fStatus').value=''; document.getElementById('fSearch').value=''; pageIdx=0; render(); }
+
+function sortBy(key){ if(sort.key===key){ sort.dir=-sort.dir; } else { sort.key=key; sort.dir=-1; } render(); }
+function page(d){ pageIdx+=d; render(); }
+
+function row(t){
+  return `<tr class="clickable" onclick="location.href='/transfer.html?id=${encodeURIComponent(t.id)}'">
+    <td class="mono" title="${esc(t.id)}">${esc(t.id)}</td>
+    <td class="mono">${esc(t.flow_id||'—')}</td>
+    <td class="mono">${esc(t.node_id||'—')}</td>
+    <td><div>${esc(t.source)}</div><div class="muted">→ ${esc(t.target)}</div></td>
+    <td>${bytes(t.size_bytes)}</td>
+    <td><span class="pill s-${esc(t.status)}">${esc(t.status)}</span>${t.error?`<div class="muted" style="font-size:.68rem;">${esc(t.error)}</div>`:''}</td>
+    <td class="muted">${latency(t.latency_ms)}</td>
+    <td class="muted">${when(t.created_at)}</td>
+    <td class="muted">${when(t.updated_at)}</td></tr>`;
+}
+
+function render(){
+  const flow=document.getElementById('fFlow').value, node=document.getElementById('fNode').value;
+  const status=document.getElementById('fStatus').value, q=document.getElementById('fSearch').value.trim().toLowerCase();
+  let rows=XFERS.filter(t=>{
+    if(flow && (t.flow_id||'')!==flow) return false;
+    if(node && (t.node_id||'')!==node) return false;
+    if(status && t.status!==status) return false;
+    if(q){ const hay=(t.id+' '+t.source+' '+t.target).toLowerCase(); if(!hay.includes(q)) return false; }
+    return true;
+  });
+  rows.sort((a,b)=>{ const av=new Date(a[sort.key]||0), bv=new Date(b[sort.key]||0); return (av-bv)*sort.dir; });
+
+  document.getElementById('arCreated').textContent = sort.key==='created_at' ? (sort.dir<0?'▼':'▲') : '';
+  document.getElementById('arUpdated').textContent = sort.key==='updated_at' ? (sort.dir<0?'▼':'▲') : '';
+
+  const size=parseInt(document.getElementById('pageSize').value)||25;
+  const total=rows.length, pages=Math.max(1,Math.ceil(total/size));
+  if(pageIdx>=pages) pageIdx=pages-1; if(pageIdx<0) pageIdx=0;
+  const start=pageIdx*size, slice=rows.slice(start, start+size);
+
+  document.getElementById('xferCount').textContent=total;
+  document.getElementById('xferBody').innerHTML=slice.length? slice.map(row).join('')
+    : `<tr><td colspan="9" class="muted" style="padding:18px;">No transfers match the filters.</td></tr>`;
+  document.getElementById('pageInfo').textContent = total ? `Showing ${start+1}–${start+slice.length} of ${total} · page ${pageIdx+1}/${pages}` : '0 results';
+  document.getElementById('prev').disabled = pageIdx<=0;
+  document.getElementById('next').disabled = pageIdx>=pages-1;
+}
+
+function refillOptions(){
+  const fSel=document.getElementById('fFlow'), nSel=document.getElementById('fNode');
+  const fCur=fSel.value, nCur=nSel.value;
+  const flows=[...new Set(XFERS.map(t=>t.flow_id).filter(Boolean))].sort();
+  const nodes=[...new Set(XFERS.map(t=>t.node_id).filter(Boolean))].sort();
+  fSel.innerHTML='<option value="">All flows</option>'+flows.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('');
+  nSel.innerHTML='<option value="">All workers</option>'+nodes.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  fSel.value=fCur; nSel.value=nCur;
+}
+
+async function load(){
+  XFERS=await api('GET','/worker-transfers')||[];
+  refillOptions();
+  render();
+}
+load(); setInterval(load, 4000);
+</script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+# FileTransfer runtime configuration (deployment copy).
+# Paths are resolved relative to the directory the binary is started from
+# (the Home directory — FT_HOME, set by bin/start.sh). Any value can be overridden by
+# the environment variable shown in [brackets].
+
+database:
+  # Shared Postgres DSN used by the master and every worker. [FT_DATABASE_DSN]
+  # Format: postgres://<user>:<password>@<host>:<port>/<db>?<params>
+  # The password is given explicitly (empty here — note the ':' before '@').
+  # search_path pins this instance to a schema (app1 / app2 / public); the pgx
+  # driver honours it. (For manual `psql "<dsn>"` use options=-csearch_path=app1
+  # instead — libpq rejects a bare search_path URI param.)
+  dsn: "postgres://db_admin:@localhost:6432/filetransfer?sslmode=disable&search_path=app1"
+
+master:
+  addr: ":8088"              # UI + REST API listen address [FT_MASTER_ADDR]
+  chunk_size: 8388608        # default chunk size in bytes (8 MiB) [FT_CHUNK_SIZE]
+
+worker:
+  master_url: "https://localhost:8088"   # master / load-balancer URL [FT_MASTER_URL]
+  poll_interval: 3           # seconds between claim polls when idle [FT_POLL_INTERVAL]
+  concurrency: 4             # concurrent chunk transfers [FT_CONCURRENCY]
+  node_id: ""                # stable id; blank => random at startup [FT_NODE_ID]
+
+paths:
+  temp_dir:  "tmp"    # scratch space for chunk staging / assembly [FT_TEMP_DIR]
+  log_dir:   "logs"   # [FT_LOG_DIR]
+  flows_dir: "flows"  # per-flow YAMLs (one file per flow_identifier) [FT_FLOWS_DIR]
+  apps_file: "config/applications.yml"  # application name -> endpoint registry [FT_APPS_FILE]
+
+tls:
+  enabled: true              # serve HTTPS and require workers to trust the CA [FT_TLS_ENABLED]
+  cert_file: "certs/server.crt"   # server public cert [FT_TLS_CERT]
+  key_file:  "certs/server.key"   # server private key [FT_TLS_KEY]
+  ca_dir:    "certs/CAs"          # trust store (CA certs workers/clients trust) [FT_TLS_CA_DIR]
+  # Mutual TLS: require + verify a client cert on every request; its CN is matched to a
+  # flow in flows/ to authenticate and authorize the calling application.
+  mtls: true                 # [FT_TLS_MTLS]
+  client_ca_dir: "certs/CAs" # CAs used to verify client certs (default: ca_dir) [FT_TLS_CLIENT_CA_DIR]
+  client_cert: "certs/client.crt"  # client cert THIS node presents (worker → master) [FT_TLS_CLIENT_CERT]
+  client_key:  "certs/client.key"                                                   # [FT_TLS_CLIENT_KEY]
+
+logging:
+  server_file:   "logs/filetransfer.log"  # server + error logs
+  transfer_file: "logs/transfers.log"     # dedicated file-transfer audit log
+  max_size_mb: 50            # rotate a log once it exceeds this size
+  max_backups: 10            # rotated files to keep
+  max_age_days: 30           # max age of a rotated file
+  compress: true             # gzip rotated files
+
+s3:
+  region: "us-east-1"
+  endpoint: ""
+  access_key: ""
+  secret_key: ""

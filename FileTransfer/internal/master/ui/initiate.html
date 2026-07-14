@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>FileTransfer — Initiate</title>
+<link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+<header>
+  <span class="dot"></span>
+  <div>
+    <h1>FileTransfer · Master</h1>
+    <div class="sub">Initiate a file transfer</div>
+  </div>
+</header>
+<nav id="nav"></nav>
+
+<div class="wrap">
+  <div class="card">
+    <h2>New Transfer</h2>
+    <div class="body">
+      <div class="row">
+        <div>
+          <label>Flow</label>
+          <select id="flow" onchange="onFlow()"></select>
+          <div id="flowInfo" class="muted mono" style="margin-top:4px;font-size:.7rem;"></div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <div><label>Source (relative to sender sandbox)</label>
+          <div style="display:flex;gap:6px;"><input id="src" placeholder="report.csv"><button class="ghost" style="flex:0 0 auto;" onclick="pickSource()">Browse…</button></div>
+        </div>
+        <div><label>Target path (relative to receiver sandbox) — optional</label>
+          <input id="tgt" placeholder="blank = same filename as source">
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <div><label>Chunk size (bytes, blank = default)</label><input id="chunk" type="number" placeholder="8388608"></div>
+        <div style="flex:0;"><button onclick="createTransfer()">Initiate</button></div>
+      </div>
+      <div id="msg" class="muted" style="margin-top:10px;font-size:.78rem;"></div>
+    </div>
+  </div>
+  <p class="muted" style="font-size:.78rem;">
+    Initiating registers the transfer against the selected flow; an mTLS-authenticated worker then
+    performs it. Paths are resolved inside the flow's sender/receiver sandboxes. Once created, the
+    transfer is logged and appears on the <a href="/transfers.html">File Transfers</a> page.
+  </p>
+</div>
+
+<div class="modal-bg" id="pickBg">
+  <div class="modal">
+    <h3><span id="pickTitle">Pick a file</span><span class="x" onclick="closePick()">✕</span></h3>
+    <div class="mbody">
+      <div class="muted" id="pickApp" style="font-size:.76rem;margin-bottom:8px;"></div>
+      <div class="fb" id="pickFb"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+renderNav('initiate');
+let FLOWS=[];
+const curFlow=()=>FLOWS.find(f=>f.flow_identifier===document.getElementById('flow').value);
+
+function onFlow(){ const f=curFlow();
+  document.getElementById('flowInfo').textContent = f
+    ? `${f.sender.application}:${f.sender.path}  →  ${f.receiver.application}:${f.receiver.path}` : ''; }
+
+async function loadFlows(){
+  FLOWS=await api('GET','/flows')||[];
+  const sel=document.getElementById('flow');
+  sel.innerHTML=FLOWS.length ? FLOWS.map(f=>`<option value="${esc(f.flow_identifier)}">${esc(f.flow_identifier)}</option>`).join('')
+    : '<option value="">— no flows configured —</option>';
+  onFlow();
+}
+
+function msg(t,err){ const el=document.getElementById('msg'); el.textContent=t; el.style.color=err?'#f87171':'#8b95b5'; }
+
+// ── File picker (modal) — browses the selected flow's sender sandbox ──
+function pickSource(){
+  const f=curFlow();
+  if(!f){ msg('Select a flow first',true); return; }
+  document.getElementById('pickTitle').textContent='Pick a source file';
+  document.getElementById('pickApp').innerHTML=`${esc(f.sender.application)} · <span class="mono">${esc(f.sender.path)}</span>`;
+  document.getElementById('pickBg').classList.add('open');
+  mountBrowser(document.getElementById('pickFb'), f.flow_identifier, 'sender', { onPick:rel=>{ document.getElementById('src').value=rel; closePick(); } });
+}
+function closePick(){ document.getElementById('pickBg').classList.remove('open'); document.getElementById('pickFb').innerHTML=''; }
+document.getElementById('pickBg').onclick=e=>{ if(e.target.id==='pickBg') closePick(); };
+
+async function createTransfer(){
+  const f=curFlow();
+  const src=document.getElementById('src').value.trim();
+  let tgt=document.getElementById('tgt').value.trim();
+  if(!f){ msg('Select a flow',true); return; }
+  if(!src){ msg('Source (relative to sender sandbox) is required',true); return; }
+  if(!tgt){ tgt=src.split('/').pop(); }
+  const chunk=parseInt(document.getElementById('chunk').value)||0;
+  const payload={flow_id:f.flow_identifier, source:src, target:tgt};
+  if(chunk>0) payload.chunk_size=chunk;
+  try{ const t=await api('POST','/transfers',payload);
+    msg('Created transfer '+t.id+' — see the File Transfers page.');
+    document.getElementById('src').value=''; document.getElementById('tgt').value=''; }
+  catch(e){ msg(''+e,true); }
+}
+loadFlows();
+</script>
+</body>
+</html>

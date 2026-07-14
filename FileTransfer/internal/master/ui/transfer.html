@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>FileTransfer — Transfer</title>
+<link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+<header>
+  <span class="dot"></span>
+  <div>
+    <h1>FileTransfer · Master</h1>
+    <div class="sub">Transfer details</div>
+  </div>
+</header>
+<nav id="nav"></nav>
+
+<div class="wrap">
+  <p style="margin:0 0 14px;"><a href="/transfers.html">‹ Back to File Transfers</a></p>
+
+  <div class="card">
+    <h2>Transfer</h2>
+    <div class="body" id="summary"><div class="muted">Loading…</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Progress</h2>
+    <div class="body"><div class="bar" style="height:10px;"><span id="progbar" style="width:0%;"></span></div>
+      <div class="muted" id="progtext" style="margin-top:8px;font-size:.8rem;"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>Chunks</h2>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr><th>Seq</th><th>Offset</th><th>Size</th><th>Checksum</th><th>Status</th><th>Worker node</th><th>Updated</th></tr></thead>
+        <tbody id="chunkBody"><tr><td colspan="7" class="muted" style="padding:16px;">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+renderNav('transfers');
+const id=new URLSearchParams(location.search).get('id');
+const pctFor=t=>t.status==='completed'?100:(t.status==='in_progress'?60:(t.status==='assigned'?25:0));
+
+function kv(k,v,mono){ return `<div class="k">${esc(k)}</div><div class="${mono?'mono':''}">${v}</div>`; }
+
+async function load(){
+  if(!id){ document.getElementById('summary').innerHTML='<div class="muted">No transfer id.</div>'; return; }
+  const [detail, wt] = await Promise.all([api('GET','/transfers/'+encodeURIComponent(id)), api('GET','/worker-transfers')]);
+  if(!detail || !detail.transfer){ document.getElementById('summary').innerHTML='<div class="muted">Transfer not found.</div>'; return; }
+  const t=detail.transfer, chunks=detail.chunks||[];
+  const node=((wt||[]).find(x=>x.id===id)||{}).node_id||'—';
+
+  document.getElementById('summary').innerHTML=`<div class="kv">
+    ${kv('ID', esc(t.id), true)}
+    ${kv('Flow', esc(t.flow_id||'—'), true)}
+    ${kv('Status', `<span class="pill s-${esc(t.status)}">${esc(t.status)}</span>`)}
+    ${kv('Worker node', esc(node), true)}
+    ${kv('Requested by', esc(t.requested_by||'—'))}
+    ${kv('Source', esc(t.source)+`  <span class="muted">(${esc(t.source_kind)})</span>`, true)}
+    ${kv('Target', esc(t.target)+`  <span class="muted">(${esc(t.target_kind)})</span>`, true)}
+    ${kv('Size', bytes(t.size_bytes)+`  <span class="muted">(${(+t.size_bytes||0).toLocaleString()} bytes)</span>`)}
+    ${kv('Chunk size', bytes(t.chunk_size))}
+    ${kv('Checksum (sha-256)', esc(t.checksum||'—'), true)}
+    ${kv('Priority', esc(t.priority))}
+    ${kv('Latency', esc(latency(t.latency_ms)))}
+    ${kv('Created', when(t.created_at))}
+    ${kv('Updated', when(t.updated_at))}
+    ${t.error?kv('Error', `<span style="color:#f87171;">${esc(t.error)}</span>`):''}
+  </div>`;
+
+  document.getElementById('progbar').style.width=pctFor(t)+'%';
+  const done=chunks.filter(c=>c.status==='written'||c.status==='acked').length;
+  document.getElementById('progtext').textContent=chunks.length? `${done}/${chunks.length} chunks written` : (t.status==='completed'?'complete':'no chunks yet');
+
+  document.getElementById('chunkBody').innerHTML=chunks.length? chunks.map(c=>
+    `<tr><td>${c.seq}</td><td class="mono">${(+c.offset||0).toLocaleString()}</td><td>${bytes(c.size)}</td>
+      <td class="mono muted" title="${esc(c.checksum)}">${esc((c.checksum||'').slice(0,16))}${c.checksum&&c.checksum.length>16?'…':''}</td>
+      <td><span class="pill s-${esc(c.status==='written'?'completed':(c.status==='failed'?'failed':'in_progress'))}">${esc(c.status)}</span></td>
+      <td class="mono">${esc(c.node_id||'—')}</td><td class="muted">${when(c.updated_at)}</td></tr>`).join('')
+    : `<tr><td colspan="7" class="muted" style="padding:16px;">No chunks recorded ${t.status==='pending'?'(awaiting a worker)':''}.</td></tr>`;
+}
+load(); setInterval(load, 4000);
+</script>
+</body>
+</html>

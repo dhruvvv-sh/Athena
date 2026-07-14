@@ -1,0 +1,26 @@
+# Build staging + deployed binary
+/build/
+/deploy/lib/
+
+# Runtime logs, pids, rotated files
+/deploy/logs/*.log
+/deploy/logs/*.out
+/deploy/logs/*.pid
+/deploy/logs/*.gz
+
+# Scratch / staging
+/deploy/tmp/*
+!/deploy/tmp/.gitkeep
+
+# Secrets — never commit private keys or CA serials
+/deploy/certs/*.key
+/deploy/certs/*.crt
+/deploy/certs/*.srl
+/deploy/certs/CAs/*.key
+/deploy/certs/CAs/*.srl
+/deploy/certs/clients/
+
+*.DS_Store
+
+# Local Go build cache
+/tmp/gocache/

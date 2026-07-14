@@ -1,0 +1,15 @@
+# Flow identifier = <Sender>_<Receiver>_<Functionality>_<Country>
+# permissions gate what each endpoint may do in its designated folder:
+#   read, write, list, delete. A sending transfer needs the SENDER to have read+write;
+#   listing/browsing a folder needs that endpoint's 'list'; deleting needs 'delete'.
+flow_identifier: app1_app2_biz_in
+sender:
+  application: app1
+  file_path: tmp/outbox
+  cn: app1-cert
+  permissions: write, delete, list, read
+receiver:
+  application: app2
+  file_path: tmp/inbox
+  cn: app2-cert
+  permissions: list, read

@@ -1,0 +1,4 @@
+# Application name -> endpoint URL. Flows reference applications only by name; this maps
+# those names to reachable endpoints (used when a worker refers a flow's application).
+app1: https://localhost:9095
+app2: https://localhost:9096

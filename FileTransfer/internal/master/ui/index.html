@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>FileTransfer — Overview</title>
+<link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+<header>
+  <span class="dot"></span>
+  <div>
+    <h1>FileTransfer · Master</h1>
+    <div class="sub">Cluster health overview</div>
+  </div>
+</header>
+<nav id="nav"></nav>
+
+<div class="wrap">
+  <div class="stats" style="margin-bottom:16px;">
+    <div class="stat"><div class="n" id="cMasters">0</div><div class="l">Masters healthy</div></div>
+    <div class="stat"><div class="n" id="cWorkers">0</div><div class="l">Worker nodes</div></div>
+    <div class="stat"><div class="n" id="cPartners">0</div><div class="l">Partners</div></div>
+    <div class="stat"><div class="n" id="cFlows">0</div><div class="l">Configured flows</div></div>
+  </div>
+
+  <!-- Main application (the one we are connected to) + its worker nodes -->
+  <div class="card">
+    <h2>Main Application <span id="mainName" class="muted" style="text-transform:none;font-weight:400;letter-spacing:0;"></span></h2>
+    <div class="body" id="mainInfo"><div class="muted">Loading…</div></div>
+    <div style="padding:2px 16px 0;"><label style="margin:0;">Worker nodes</label></div>
+    <table>
+      <thead><tr><th>Health</th><th>Worker</th><th>Endpoint</th><th>Last seen</th></tr></thead>
+      <tbody id="mainWorkers"><tr><td colspan="4" class="muted" style="padding:14px;">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- Partners + their flows + their worker nodes -->
+  <h2 style="font-size:.82rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin:20px 2px 10px;">Partners</h2>
+  <div id="partners"><div class="muted" style="padding:0 2px;">Loading…</div></div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+renderNav('overview');
+const dot=ok=>`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${ok?'var(--ok)':'var(--err)'};"></span>`;
+const hpill=ok=>`<span class="pill ${ok?'o-accepted':'o-rejected'}">${ok?'up':'down'}</span>`;
+const dirPill=d=> d==='outbound'
+  ? `<span class="pill d-sender" title="we send to this partner">send →</span>`
+  : `<span class="pill d-receiver" title="we receive from this partner">← receive</span>`;
+
+function workerRows(workers, up){
+  if(!workers || !workers.length) return `<tr><td colspan="4" class="muted" style="padding:14px;">No worker nodes reporting.</td></tr>`;
+  return workers.map(wk=>{
+    const ok = !!up && wk.last_seen && (Date.now()-new Date(wk.last_seen).getTime() < 60000);
+    return `<tr>
+      <td>${dot(ok)} <span class="muted" style="font-size:.72rem;">${ok?'active':'stale'}</span></td>
+      <td class="mono">${esc(wk.id)}</td>
+      <td class="mono muted">${esc(wk.endpoint||'—')}</td>
+      <td class="muted">${when(wk.last_seen)}</td></tr>`;
+  }).join('');
+}
+
+async function load(){
+  const [cluster,flows]=await Promise.all([api('GET','/cluster'),api('GET','/flows')]);
+  const masters=(cluster&&cluster.masters)||[];
+  const partners=(cluster&&cluster.partners)||[];
+  const self=(cluster&&cluster.self)||'';
+  const byApp=Object.fromEntries(masters.map(m=>[m.application,m]));
+
+  const healthy=masters.filter(m=>m.healthy).length;
+  const workers=masters.reduce((n,m)=>n+((m.workers||[]).length),0);
+  document.getElementById('cMasters').textContent=`${healthy}/${masters.length}`;
+  document.getElementById('cWorkers').textContent=workers;
+  document.getElementById('cPartners').textContent=partners.length;
+  document.getElementById('cFlows').textContent=(flows||[]).length;
+
+  // ── Main application ──
+  const main=byApp[self]||{application:self, endpoint:'', healthy:false, workers:[]};
+  document.getElementById('mainName').textContent = self ? `· ${self}` : '';
+  document.getElementById('mainInfo').innerHTML=`<div class="kv">
+    <div class="k">Application</div><div><b>${esc(main.application||'—')}</b></div>
+    <div class="k">Health</div><div>${hpill(main.healthy)}</div>
+    <div class="k">Endpoint</div><div class="mono muted">${esc(main.endpoint||'—')}</div>
+    <div class="k">Worker nodes</div><div>${(main.workers||[]).length}</div>
+  </div>`;
+  document.getElementById('mainWorkers').innerHTML=workerRows(main.workers, main.healthy);
+
+  // ── Partners: each with its flows and its own worker nodes ──
+  document.getElementById('partners').innerHTML=partners.length? partners.map(p=>{
+    const pm=byApp[p.application]||{};
+    const wkrs=pm.workers||[];
+    const flows=(p.flows||[]).map(f=>`<div style="margin:2px 0;">${dirPill(f.direction)} <span class="mono">${esc(f.flow_identifier)}</span></div>`).join('');
+    return `<div class="card">
+      <h2><span class="worker-hd">${dot(p.healthy)} Partner · ${esc(p.application)} ${hpill(p.healthy)}
+        <span class="badge">${wkrs.length} worker${wkrs.length===1?'':'s'}</span></span></h2>
+      <div class="body"><div class="kv">
+        <div class="k">Endpoint</div><div class="mono muted">${esc(p.endpoint||'no endpoint in applications.yml')}</div>
+        <div class="k">Flows</div><div>${flows||'<span class="muted">—</span>'}</div>
+      </div></div>
+      <div style="padding:2px 16px 0;"><label style="margin:0;">Worker nodes</label></div>
+      <table>
+        <thead><tr><th>Health</th><th>Worker</th><th>Endpoint</th><th>Last seen</th></tr></thead>
+        <tbody>${workerRows(wkrs, p.healthy)}</tbody>
+      </table>
+    </div>`;
+  }).join('')
+    : `<div class="card"><div class="body muted">No partners — no flows reference this application (${esc(self||'?')}).</div></div>`;
+}
+load(); setInterval(load, 4000);
+</script>
+</body>
+</html>

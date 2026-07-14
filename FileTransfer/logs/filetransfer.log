@@ -1,0 +1,3 @@
+2026/07/14 13:07:48 [master] master: ping: failed to connect to `user=db_admin database=filetransfer`:
+	[::1]:6432 (localhost): dial error: dial tcp [::1]:6432: connect: connection refused
+	127.0.0.1:6432 (localhost): dial error: dial tcp 127.0.0.1:6432: connect: connection refused
